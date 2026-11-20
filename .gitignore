@@ -1,0 +1,15 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite Database
+rewear.db
+*.sqlite
+*.sqlite3
+
+# Uploaded product images
+uploads/
+
+# Streamlit config / cache
+.streamlit/

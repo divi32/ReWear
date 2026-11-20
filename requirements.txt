@@ -1,0 +1,4 @@
+# ReWear - Used Clothes Reselling Website
+# Dependencies: Streamlit and Pillow (SQLite3 and hashlib are built into Python)
+streamlit>=1.30.0
+pillow>=10.0.0
