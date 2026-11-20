@@ -167,7 +167,7 @@ For demonstration, evaluation, or testing, you can log in immediately using thes
 
 | Role | Email Address | Password | Purpose |
 | :--- | :--- | :--- | :--- |
-| **🛡️ Admin** | `admin@rewear.com` | `admin123` | View full system stats, all users, all products & orders |
+| **🛡️ Admin** | `admin@rewear.com` | `Admin@123` | View full system stats, all users, all products & orders |
 | **🏪 Seller** | `seller@rewear.com` | `seller123` | List new clothes, view seller dashboard & sales revenue |
 | **🛍️ Buyer** | `buyer@rewear.com` | `buyer123` | Browse clothes, add to wishlist, cart & checkout |
 

@@ -197,6 +197,35 @@ def init_db():
     # Seed sample users and products if database is fresh
     seed_sample_data()
 
+    # Always ensure admin@rewear.com exists with Admin@123 across all restarts and deployments
+    ensure_admin_account()
+
+
+def ensure_admin_account():
+    """
+    Guarantees that the default admin account (admin@rewear.com / Admin@123)
+    always exists with the 'admin' role and valid PBKDF2 hashed password.
+    Runs on every app launch:
+    - If admin@rewear.com is missing -> creates it.
+    - If admin@rewear.com exists -> unconditionally resets its password to 'Admin@123'
+      and ensures its role is 'admin'.
+    """
+    from auth import hash_password
+
+    new_hash = hash_password("Admin@123")
+    admin = fetch_one("SELECT user_id FROM users WHERE email = ?", ("admin@rewear.com",))
+    
+    if not admin:
+        execute_query(
+            "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)",
+            ("Admin ReWear", "admin@rewear.com", new_hash, "admin")
+        )
+    else:
+        execute_query(
+            "UPDATE users SET password_hash = ?, role = 'admin' WHERE email = ?",
+            (new_hash, "admin@rewear.com")
+        )
+
 
 def seed_sample_data():
     """
@@ -212,12 +241,12 @@ def seed_sample_data():
         return  # Database already seeded
 
     # 1. Create Default Users
-    # Password for all demo accounts is made simple for testing:
-    # admin@rewear.com -> admin123
+    # Password for demo accounts:
+    # admin@rewear.com -> Admin@123
     # seller@rewear.com -> seller123
     # buyer@rewear.com -> buyer123
     users_data = [
-        ("Admin ReWear", "admin@rewear.com", hash_password("admin123"), "admin"),
+        ("Admin ReWear", "admin@rewear.com", hash_password("Admin@123"), "admin"),
         ("Priya EcoStore", "seller@rewear.com", hash_password("seller123"), "seller"),
         ("Rahul Sharma", "buyer@rewear.com", hash_password("buyer123"), "buyer")
     ]

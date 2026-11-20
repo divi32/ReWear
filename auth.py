@@ -139,8 +139,8 @@ def render_auth_page():
                     if not user:
                         st.error("❌ No account found with this email. Please register first.")
                     else:
-                        # Verify PBKDF2 password hash
-                        if verify_password(password, user["password_hash"]):
+                        # Verify PBKDF2 password hash (supports exact or trimmed password)
+                        if verify_password(password, user["password_hash"]) or verify_password(password.strip(), user["password_hash"]):
                             login_user(user)
                         else:
                             st.error("❌ Incorrect password. Please try again.")
@@ -149,9 +149,9 @@ def render_auth_page():
         with st.expander("💡 Mini-Project Demo Accounts (Click to view test logins)"):
             st.markdown("""
             You can use these pre-seeded demo accounts to test different roles:
-            - **Buyer Account:** `buyer@rewear.com` | Password: `buyer123`
+            - **Admin Account:** `admin@rewear.com` | Password: `Admin@123`
             - **Seller Account:** `seller@rewear.com` | Password: `seller123`
-            - **Admin Account:** `admin@rewear.com` | Password: `admin123`
+            - **Buyer Account:** `buyer@rewear.com` | Password: `buyer123`
             """)
 
     # -------------------------------------------------------------------------
