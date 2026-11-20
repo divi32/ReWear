@@ -135,7 +135,8 @@ def init_db():
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK(role IN ('buyer', 'seller', 'admin'))
+        role TEXT NOT NULL CHECK(role IN ('buyer', 'seller', 'admin')),
+        upi_id TEXT
     );
     """)
 
@@ -172,6 +173,7 @@ def init_db():
         order_id INTEGER PRIMARY KEY AUTOINCREMENT,
         buyer_id INTEGER NOT NULL,
         total_amount REAL NOT NULL,
+        payment_method TEXT NOT NULL DEFAULT 'Cash on Delivery',
         status TEXT NOT NULL DEFAULT 'completed',
         created_at TEXT NOT NULL,
         FOREIGN KEY (buyer_id) REFERENCES users (user_id) ON DELETE CASCADE
@@ -190,6 +192,34 @@ def init_db():
         FOREIGN KEY (product_id) REFERENCES products (product_id) ON DELETE CASCADE
     );
     """)
+
+    # Table 6: donations
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS donations (
+        donation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        condition TEXT NOT NULL CHECK(condition IN ('Wearable but donating', 'Not wearable - for recycling')),
+        city TEXT NOT NULL,
+        contact TEXT NOT NULL,
+        image_path TEXT,
+        status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Collected')),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    );
+    """)
+
+    # Migrations for existing databases: ensure new columns exist safely
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN upi_id TEXT;")
+    except Exception:
+        pass  # Column already exists
+
+    try:
+        cursor.execute("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'Cash on Delivery';")
+    except Exception:
+        pass  # Column already exists
 
     conn.commit()
     conn.close()
@@ -225,6 +255,11 @@ def ensure_admin_account():
             "UPDATE users SET password_hash = ?, role = 'admin' WHERE email = ?",
             (new_hash, "admin@rewear.com")
         )
+
+    # Ensure default demo seller has a sample UPI ID for testing direct UPI payments
+    seller = fetch_one("SELECT user_id, upi_id FROM users WHERE email = ?", ("seller@rewear.com",))
+    if seller and not seller.get("upi_id"):
+        execute_query("UPDATE users SET upi_id = ? WHERE email = ?", ("priya.ecostore@okaxis", "seller@rewear.com"))
 
 
 def seed_sample_data():

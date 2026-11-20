@@ -28,6 +28,7 @@ rEwEAR/
 ├── products.py         # Seller listing form, Pillow image resizing/saving, and product card UI
 ├── wishlist_cart.py    # Marketplace search/filters, wishlist management, and shopping cart
 ├── orders.py           # Checkout handling, buyer order history, seller dashboard, and admin view
+├── donations.py        # Clothes donation & recycling requests, user history, and admin pickup tracking
 ├── requirements.txt    # Project dependencies (streamlit, pillow)
 ├── README.md           # Project documentation, architecture, and setup instructions
 ├── .gitignore          # Ignores rewear.db, uploads/, and __pycache__/
@@ -55,6 +56,7 @@ erDiagram
         string email UK
         string password_hash
         string role
+        string upi_id
     }
 
     PRODUCTS {
@@ -78,6 +80,7 @@ erDiagram
         int order_id PK
         int buyer_id FK
         real total_amount
+        string payment_method
         string status
         string created_at
     }
@@ -96,6 +99,7 @@ erDiagram
 3. **`wishlist`**: Many-to-many relationship mapping users to saved clothing items.
 4. **`orders`**: Stores checkout records, total purchase amount, status, and timestamp.
 5. **`order_items`**: Line items within each order linking to specific products and purchase prices.
+6. **`donations`**: Clothes donation & recycling records linking to users (`type`, `quantity`, `condition`, `city`, `contact`, `image_path`, `status`).
 
 ---
 
@@ -123,8 +127,11 @@ erDiagram
    - Fast client-side cart stored in `st.session_state["cart"]`.
    - Add/remove items with instant subtotal and free eco-packaging calculations.
 
-6. **Transactional Checkout (`orders.py`):**
+6. **Transactional Checkout & Payment Step (`orders.py`):**
    - Validates buyer contact details and delivery address.
+   - Provides a simulated payment choice without real money: **"Cash on Delivery"** and **"Pay seller directly (UPI)"**.
+   - Saves the selected payment method in the `orders` table.
+   - If direct UPI is chosen, displays the seller's configured **UPI ID** (no bank accounts or card details required).
    - Atomically records the order in `orders`, items in `order_items`, updates product status to `'sold'`, and clears the user's cart.
    - Celebrates successful order with Streamlit balloons (`st.balloons()`).
 
@@ -138,6 +145,12 @@ erDiagram
 
 9. **Pre-Seeded Demo Data (`database.py`):**
    - On the first run, the database automatically initializes 3 demo users and 8 varied sample clothes with Pillow-generated placeholder photos so the demo is never empty.
+
+10. **Donate & Recycle Clothes (`donations.py`):**
+    - Logged-in users can schedule free pickups to donate wearable clothes to charity or recycle non-wearable textiles.
+    - Captures clothing type, quantity, condition, pickup city, contact number, and optional photo.
+    - Users track their own requests (`Pending` vs `Collected`).
+    - Admins review all platform donations and click **"Mark as Collected"** to update pickup status.
 
 ---
 

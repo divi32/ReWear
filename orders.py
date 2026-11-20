@@ -24,7 +24,8 @@ from database import BASE_DIR, get_connection, execute_query, fetch_all, fetch_o
 def render_checkout_page():
     """
     Renders the checkout form, validates shipping info, records order and items,
-    and transitions product status from 'available' to 'sold'.
+    saves the chosen payment method, transitions products to 'sold',
+    and displays seller UPI ID for direct peer-to-peer payment when chosen.
     """
     st.markdown("## 💳 Order Checkout")
     st.caption("Finalize your sustainable pre-loved clothing purchase.")
@@ -34,6 +35,52 @@ def render_checkout_page():
         st.warning("⚠️ Please log in to complete checkout.")
         return
 
+    # If an order was just placed, display the complete confirmation & payment screen
+    if "placed_order" in st.session_state and st.session_state["placed_order"]:
+        order_info = st.session_state["placed_order"]
+        st.balloons()
+        st.success(f"🎉 Order placed successfully! Your Order ID is **#{order_info['order_id']}**.")
+        
+        with st.container(border=True):
+            st.markdown("### 📋 Order Confirmation Details")
+            st.write(f"- **Recipient:** {order_info['recipient_name']} ({order_info['phone']})")
+            st.write(f"- **Delivery Address:** {order_info['address']}")
+            st.write(f"- **Total Amount:** **₹{order_info['total_amount']:.2f}**")
+            st.write(f"- **Payment Method:** `{order_info['payment_method']}`")
+            
+            st.divider()
+
+            # Payment Instructions
+            if order_info["payment_method"] == "Pay seller directly (UPI)":
+                st.markdown("### 📱 Pay Seller Directly (UPI)")
+                st.caption("No real money or bank account numbers needed. Transfer directly to the seller via any UPI app (GPay, PhonePe, Paytm, BHIM):")
+                
+                for seller_id, s_data in order_info["sellers"].items():
+                    with st.container(border=True):
+                        st.markdown(f"**Seller:** {s_data['name']}")
+                        st.markdown(f"**Amount Due:** ₹{s_data['amount']:.2f} *(for: {', '.join(s_data['items'])})*")
+                        if s_data.get("upi_id"):
+                            st.markdown(f"**Seller UPI ID:** `{s_data['upi_id']}`")
+                            st.info(f"💡 Open your UPI app and send **₹{s_data['amount']:.2f}** to `{s_data['upi_id']}`.")
+                        else:
+                            st.info(f"ℹ️ The seller ({s_data['name']}) has not set a UPI ID yet. They will share payment details directly upon order confirmation.")
+            else:
+                st.info(f"💵 **Cash on Delivery Selected:** Please pay **₹{order_info['total_amount']:.2f}** in cash or scan the delivery agent's QR code upon delivery.")
+
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("🛍️ Continue Shopping", use_container_width=True):
+                st.session_state["placed_order"] = None
+                st.session_state["page"] = "marketplace"
+                st.rerun()
+        with c_btn2:
+            if st.button("📦 View My Orders", use_container_width=True):
+                st.session_state["placed_order"] = None
+                st.session_state["page"] = "orders"
+                st.rerun()
+        return
+
+    # Normal checkout flow
     cart = st.session_state.get("cart", [])
     if not cart:
         st.info("Your cart is empty. Nothing to checkout.")
@@ -70,9 +117,11 @@ def render_checkout_page():
             phone = st.text_input("Mobile Phone Number *", placeholder="e.g. 9876543210")
             address = st.text_area("Complete Delivery Address *", placeholder="House/Flat No, Street, Landmark, City, Pincode")
             
+            # Simple payment method choice without real money
             payment_method = st.radio(
-                "Payment Method",
-                options=["🌱 Eco-COD (Cash / UPI on Delivery)", "💳 Demo Online Payment / UPI"]
+                "Payment Method *",
+                options=["Cash on Delivery", "Pay seller directly (UPI)"],
+                help="Select how you wish to pay. Direct UPI displays the seller's UPI ID upon ordering."
             )
 
             submit_order = st.form_submit_button("✅ Place Order Now", type="primary", use_container_width=True)
@@ -93,17 +142,18 @@ def render_checkout_page():
 
                         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        # 1. Insert into orders table
+                        # 1. Insert into orders table with chosen payment method
                         cursor.execute(
                             """
-                            INSERT INTO orders (buyer_id, total_amount, status, created_at)
-                            VALUES (?, ?, 'completed', ?)
+                            INSERT INTO orders (buyer_id, total_amount, payment_method, status, created_at)
+                            VALUES (?, ?, ?, 'completed', ?)
                             """,
-                            (current_user["user_id"], total_amount, now_str)
+                            (current_user["user_id"], total_amount, payment_method, now_str)
                         )
                         order_id = cursor.lastrowid
 
                         # 2. Insert each item into order_items and mark product as 'sold'
+                        sellers_map = {}
                         for item in items:
                             cursor.execute(
                                 """
@@ -123,18 +173,36 @@ def render_checkout_page():
                                 (item["product_id"],)
                             )
 
+                            # Aggregate seller info for payment display
+                            s_id = item["seller_id"]
+                            if s_id not in sellers_map:
+                                s_row = fetch_one("SELECT name, upi_id FROM users WHERE user_id = ?", (s_id,))
+                                sellers_map[s_id] = {
+                                    "name": s_row["name"] if s_row else "Seller",
+                                    "upi_id": s_row.get("upi_id") if s_row else None,
+                                    "amount": 0.0,
+                                    "items": []
+                                }
+                            sellers_map[s_id]["amount"] += item["price"]
+                            sellers_map[s_id]["items"].append(item["title"])
+
                         conn.commit()
                         conn.close()
 
-                        # Clear cart and celebrate!
+                        # Clear cart in session state
                         st.session_state["cart"] = []
-                        st.balloons()
-                        st.success(f"🎉 Order placed successfully! Your Order ID is **#{order_id}**.")
-                        st.info(f"Delivering to: {address.strip()} (Recipient: {recipient_name.strip()})")
-                        
-                        if st.button("📦 View Order History"):
-                            st.session_state["page"] = "orders"
-                            st.rerun()
+
+                        # Store confirmation data for persistent rendering
+                        st.session_state["placed_order"] = {
+                            "order_id": order_id,
+                            "recipient_name": recipient_name.strip(),
+                            "phone": phone.strip(),
+                            "address": address.strip(),
+                            "total_amount": total_amount,
+                            "payment_method": payment_method,
+                            "sellers": sellers_map
+                        }
+                        st.rerun()
 
                     except Exception as e:
                         st.error(f"❌ Failed to process order: {str(e)}")
@@ -175,6 +243,7 @@ def render_order_history_page():
                 st.caption(f"Placed on: {order['created_at']}")
             with o_head2:
                 st.markdown(f"**Total: ₹{order['total_amount']:.2f}**")
+                st.caption(f"Payment: `{order.get('payment_method', 'Cash on Delivery')}`")
             with o_head3:
                 st.markdown(f"Status: `🟢 {order['status'].capitalize()}`")
 
@@ -225,6 +294,30 @@ def render_seller_dashboard():
 
     seller_id = current_user["user_id"]
 
+    # Optional Seller UPI Payment Configuration
+    seller_user = fetch_one("SELECT name, email, upi_id FROM users WHERE user_id = ?", (seller_id,))
+    current_upi = seller_user.get("upi_id") or ""
+
+    with st.expander("⚙️ Seller Payment Settings (UPI ID)"):
+        st.caption("Add your personal or business UPI ID so buyers can pay you directly. **No bank account numbers or card details needed.**")
+        with st.form("seller_upi_form"):
+            col_upi1, col_upi2 = st.columns([3, 1])
+            with col_upi1:
+                new_upi = st.text_input(
+                    "Your UPI ID (Optional)",
+                    value=current_upi,
+                    placeholder="e.g. name@okaxis, shop@upi, mobile@paytm"
+                )
+            with col_upi2:
+                st.write("")
+                st.write("")
+                save_upi = st.form_submit_button("💾 Save UPI ID", use_container_width=True)
+
+            if save_upi:
+                execute_query("UPDATE users SET upi_id = ? WHERE user_id = ?", (new_upi.strip(), seller_id))
+                st.success("✅ UPI ID saved! Buyers who select 'Pay seller directly (UPI)' will see this ID at checkout.")
+                st.rerun()
+
     # Calculate metrics with parameterized SQL
     all_listings = fetch_all("SELECT * FROM products WHERE seller_id = ? ORDER BY product_id DESC", (seller_id,))
     active_listings = [p for p in all_listings if p["status"] == "available"]
@@ -269,12 +362,37 @@ def render_seller_dashboard():
                             st.rerun()
 
     with tab_sold:
-        if not sold_listings:
-            st.info("No items sold yet. Your sold items and revenue details will appear here once purchased.")
+        # Fetch sold items joined with orders and buyer information
+        sold_orders = fetch_all(
+            """
+            SELECT 
+                p.product_id,
+                p.title,
+                p.category,
+                p.size,
+                p.image_path,
+                oi.price as sold_price,
+                o.order_id,
+                o.payment_method,
+                o.created_at as order_date,
+                u.name as buyer_name,
+                u.email as buyer_email
+            FROM products p
+            JOIN order_items oi ON p.product_id = oi.product_id
+            JOIN orders o ON oi.order_id = o.order_id
+            JOIN users u ON o.buyer_id = u.user_id
+            WHERE p.seller_id = ?
+            ORDER BY o.order_id DESC
+            """,
+            (seller_id,)
+        )
+
+        if not sold_orders:
+            st.info("No items sold yet. When a customer purchases your pre-loved clothes, order details with buyer name and payment method will appear here.")
         else:
-            for item in sold_listings:
+            for item in sold_orders:
                 with st.container(border=True):
-                    c1, c2, c3 = st.columns([1, 4, 1])
+                    c1, c2, c3 = st.columns([1, 3, 2])
                     with c1:
                         img_path = os.path.join(BASE_DIR, item["image_path"]) if item.get("image_path") else None
                         if img_path and os.path.exists(img_path):
@@ -283,9 +401,11 @@ def render_seller_dashboard():
                             st.markdown("👕")
                     with c2:
                         st.markdown(f"**{item['title']}**")
-                        st.caption(f"Category: {item['category']} | Size: {item['size']}")
+                        st.caption(f"{item['category']} | Size: {item['size']} | Order #{item['order_id']} • {item['order_date']}")
+                        st.markdown(f"👤 **Buyer:** {item['buyer_name']} (`{item['buyer_email']}`)")
                     with c3:
-                        st.markdown(f"<span style='color:green;'>**+ ₹{item['price']:.2f}**</span>", unsafe_allow_html=True)
+                        st.markdown(f"<span style='color:green;font-size:18px;'>**+ ₹{item['sold_price']:.2f}**</span>", unsafe_allow_html=True)
+                        st.markdown(f"💳 **Payment:** `{item['payment_method']}`")
                         st.caption("Status: Sold ✓")
 
 
@@ -328,7 +448,9 @@ def render_admin_panel():
 
     st.divider()
 
-    tab_users, tab_prods, tab_orders = st.tabs(["👥 All Users", "👕 All Products", "📦 All Orders"])
+    tab_users, tab_prods, tab_orders, tab_donations = st.tabs(
+        ["👥 All Users", "👕 All Products", "📦 All Orders", "♻️ All Donations"]
+    )
 
     with tab_users:
         st.dataframe(users, use_container_width=True)
@@ -338,3 +460,58 @@ def render_admin_panel():
 
     with tab_orders:
         st.dataframe(orders, use_container_width=True)
+
+    with tab_donations:
+        all_donations = fetch_all(
+            """
+            SELECT 
+                d.donation_id, d.user_id, d.type, d.quantity, d.condition,
+                d.city, d.contact, d.image_path, d.status, d.created_at,
+                u.name as donor_name, u.email as donor_email
+            FROM donations d
+            JOIN users u ON d.user_id = u.user_id
+            ORDER BY d.donation_id DESC
+            """
+        )
+
+        if not all_donations:
+            st.info("No clothes donation or recycling requests received yet.")
+        else:
+            pending_count = sum(1 for d in all_donations if d["status"] == "Pending")
+            collected_count = sum(1 for d in all_donations if d["status"] == "Collected")
+            st.markdown(f"**Total Requests:** {len(all_donations)} &nbsp;|&nbsp; 🟡 **Pending:** {pending_count} &nbsp;|&nbsp; 🟢 **Collected:** {collected_count}")
+            st.divider()
+
+            for don in all_donations:
+                with st.container(border=True):
+                    c_img, c_detail, c_act = st.columns([1, 3, 2])
+
+                    with c_img:
+                        if don.get("image_path"):
+                            full_path = os.path.join(BASE_DIR, don["image_path"])
+                            if os.path.exists(full_path):
+                                st.image(full_path, width=70)
+                            else:
+                                st.markdown("👕")
+                        else:
+                            st.markdown("👕")
+
+                    with c_detail:
+                        st.markdown(f"**Donation #{don['donation_id']} — {don['type']}**")
+                        st.caption(f"Donor: **{don['donor_name']}** (`{don['donor_email']}`) • {don['created_at']}")
+                        st.write(f"**Quantity:** {don['quantity']} pieces &nbsp;|&nbsp; **Condition:** `{don['condition']}`")
+                        st.write(f"📍 **Pickup City:** {don['city']} &nbsp;|&nbsp; 📞 **Contact:** {don['contact']}")
+
+                    with c_act:
+                        if don["status"] == "Collected":
+                            st.markdown("🟢 **Collected**")
+                            st.caption("Completed ✓")
+                        else:
+                            st.markdown("🟡 **Pending Pickup**")
+                            if st.button("✅ Mark as Collected", key=f"mark_collected_{don['donation_id']}", use_container_width=True):
+                                execute_query(
+                                    "UPDATE donations SET status = 'Collected' WHERE donation_id = ?",
+                                    (don["donation_id"],)
+                                )
+                                st.toast(f"Donation #{don['donation_id']} marked as Collected!")
+                                st.rerun()

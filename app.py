@@ -31,6 +31,7 @@ from auth import render_auth_page, logout_user
 from products import render_add_product_page
 from wishlist_cart import render_marketplace, render_wishlist_page, render_cart_page
 from orders import render_checkout_page, render_order_history_page, render_seller_dashboard, render_admin_panel
+from donations import render_donate_page
 
 
 # =============================================================================
@@ -153,6 +154,7 @@ with st.sidebar:
         nav_items.append(("wishlist", f"💖 My Wishlist ({wishlist_count})"))
         nav_items.append(("cart", f"🛒 Shopping Cart ({cart_count})"))
         nav_items.append(("orders", "📦 Order History"))
+        nav_items.append(("donate", "♻️ Donate / Recycle"))
 
         # Seller & Admin capabilities
         if current_user["role"] in ("seller", "admin"):
@@ -256,6 +258,9 @@ elif active_page == "checkout":
 
 elif active_page == "orders":
     render_order_history_page()
+
+elif active_page == "donate":
+    render_donate_page()
 
 elif active_page == "add_product":
     render_add_product_page()
